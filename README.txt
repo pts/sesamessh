@@ -111,8 +111,9 @@ How to set up SesameSSH:
 Alternative usage of SesameSSH without downloading it: Do any of:
 
   $ curl -s https://pts.github.io/sesamessh | sh
-  $ curl -s https://github.com/pts/sesamessh/blob/master/sesamessh | sh
-  $ wget -q -O- https://github.com/pts/sesamessh/blob/master/sesamessh | sh
+  $ curl -Ls https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+  $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+  $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 
 Shell compatibility:
 

@@ -2,9 +2,10 @@
 # Passphrase-based SSH client. https://github.com/pts/sesamessh
 # This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 #
-# curl -s https://pts.github.io/sesamessh | sh
-# curl -s https://github.com/pts/sesamessh/blob/master/sesamessh | sh
-# wget -q -O- https://github.com/pts/sesamessh/blob/master/sesamessh | sh
+# $ curl -s https://pts.github.io/sesamessh | sh
+# $ curl -Ls https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+# $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+# $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
 
 if true; then  # Read entire script before running it.
