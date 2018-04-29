@@ -7,7 +7,6 @@
 # $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
 # $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
-# TODO(pts): Add uk to each iteration of key derivation.
 # TODO(pts): Add random user key generation (gpg --armor --gen-random 1 32).
 #
 
@@ -221,11 +220,13 @@ def main_pre(uk):
   if not private_key:
     # Do many iterations to make dictionary attacks harder.
     digest_cons, iterations = hashlib.sha512, 100000
-    private_key = uk + "SeKd"
+    private_key = uk + "Sekd"
     for i in xrange(iterations):
       h = digest_cons(str(i))
       h.update("SeKd")
       h.update(private_key)
+      h.update("SekD")
+      h.update(uk)
       h.update("SeKD")
       h.update(str(i))
       private_key = h.digest()
