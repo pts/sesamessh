@@ -1,9 +1,14 @@
 #! /bin/sh --
-# Portable SSH client. https://github.com/pts/paperssh/blob/master/sesamessh
-# !! update URL
+# Passphrase-based SSH client. https://github.com/pts/sesamessh
+# This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
+#
+# curl -s https://pts.github.io/sesamessh | sh
+# curl -s https://github.com/pts/sesamessh/blob/master/sesamessh | sh
+# wget -q -O- https://github.com/pts/sesamessh/blob/master/sesamessh | sh
+#
 
 if true; then  # Read entire script before running it.
-rmtmp() {
+rmtmp() {  # Will be overwritten later.
   :
 }
 die() {
@@ -15,7 +20,7 @@ die() {
 # Needed in $SHCK_ARGS below.
 test "$ZSH_VERSION" && setopt shwordsplit 2>/dev/null
 
-unset TARGET UK HK IS_SETUP STATUS EXPECTED_OUTPUT PYCODE  # Unexport.
+unset TARGET UK HK IS_SETUP STATUS EXPECTED_OUTPUT PYCODE ARG SHKC_ARGS Q_ARGS  # Unexport.
 IS_SETUP=
 if test "$1" = setup || test "$1" = --setup; then
   IS_SETUP=1
@@ -25,7 +30,7 @@ fi
 # Find a Python which can do the operations we need.
 # Currently only Python 2.4, 2.5, 2.6 and 2.7 are supported, Pythen 3 isn't.
 # For Python 2.4, the hashlib package needs to be installed as an extra.
-PYCODE="import base64, hashlib, os, struct, sys; print base64.b64encode(hashlib.sha512(struct.pack('>H', int(os.getenv('HK')))).digest().encode('hex').upper().decode('hex'))"
+PYCODE='import base64, hashlib, os, struct, sys; print base64.b64encode(hashlib.sha512(struct.pack(">H", int(os.getenv("HK")))).digest().encode("hex").upper().decode("hex"))'
 PYTHON=
 for PYTHON in python python2 python2.7 python2.6 python2.5 python2.4; do
   TARGET="$(HK=26740 "$PYTHON" -c "$PYCODE" 2>/dev/null)"
@@ -37,19 +42,39 @@ test "$PYTHON" || die 'working Python not found'
 if test $# = 0; then
   echo -n 'Enter sesamessh target: '
   read TARGET </dev/tty
+  test "$TARGET" || die 'target must not be empty'
+  # Dash and busybox sh don't support this:
+  # test -z "$BASH_SOURCE" && test -z "$ZSH_SCRIPT"
+  # This is for interactive SSH in `curl ... | sh'
+  # (rather than `echo msg | dash ./sesamessh').
+  test "${0%ssh}" = "$0" && exec </dev/tty  # E.g. $0 is dash.
 else
   TARGET=
 fi
-test "$TARGET" || die 'target must not be empty'
-# We could use `read -s' here, but Dash doesn't support it.
-echo -n 'Enter sesamessh user key: '
-# Any byte except for \0 and \n is supported in $UK. Accented characters
-# (non-ASCII bytes) are passed as is, but they are not recommended in case
-# the encoding of the TTY changes in the future.
-read UK </dev/tty
+if test "$SESAMESSH_UK"; then
+  # As a user of sesamessh, don't type `SESAMESSH_UK=...' to your shell
+  # command-line, to prevent the key from being saved to the shell history.
+  # Do this instead: `read SESAMESSH_UK; export SESAMESSH_UK'.
+  UK="$SESAMESSH_UK"
+  unset SESAMESSH_UK  # Prevent exporting.
+else
+  # We could use `read -s' here, but Dash doesn't support it.
+  echo -n 'Enter sesamessh user key: '
+  # Any byte except for \0 and \n is supported in $UK. Accented characters
+  # (non-ASCII bytes) are passed as is, but they are not recommended in case
+  # the encoding of the TTY changes in the future.
+  read UK </dev/tty
+fi
 test "$UK" || die 'user key must not be empty'
-echo -n 'Enter sesamessh host key: '
-read HK </dev/tty
+
+
+if test "$SESAMESSH_HK"; then
+  HK="$SESAMESSH_HK"
+  unset SESAMESSH_HK  # Prevent exporting.
+else
+  echo -n 'Enter sesamessh host key: '
+  read HK </dev/tty
+fi
 test "$HK" = . && HK=
 
 T="${TMPDIR:-/tmp}/sesamessh.tmp.$$"
@@ -66,12 +91,11 @@ fi
 (: >"$T/known_hosts" && chmod 600 -- "$T/known_hosts") || die "cannot create or chmod known_hosts file: $T/known_hosts"
 # TODO(pts): Create SSH config file ($T/config), hide even more options from command-line.
 
-# !! Use PYCODE='...'
-PYCODE="import base64, hashlib, os, struct, sys
+PYCODE='import base64, hashlib, os, struct, sys
 
 def get_public_key_ed25519_unsafe(private_key, _bpow=[]):
   h = hashlib.sha512(private_key).digest()[:32]
-  e = ((1 << 254) | (int(h[::-1].encode('hex'), 16) & ~(7 | 1 << 255))) % (
+  e = ((1 << 254) | (int(h[::-1].encode("hex"), 16) & ~(7 | 1 << 255))) % (
       (1 << 252) + 0x14def9dea2f79cd65812631a5cf5d3ed)
   q = (1 << 255) - 19
   if not _bpow:  # Compute it only for the first time.
@@ -97,90 +121,90 @@ def get_public_key_ed25519_unsafe(private_key, _bpow=[]):
     e >>= 1
   zi = pow(z, q - 2, q)
   x, y = (x * zi) % q, (y * zi) % q
-  return ('%064x' % (y & ~(1 << 255) | ((x & 1) << 255))).decode('hex')[::-1]
+  return ("%064x" % (y & ~(1 << 255) | ((x & 1) << 255))).decode("hex")[::-1]
 
 
 def build_openssh_private_key_ed25519(
-    public_key, private_key, comment='SeSc', checkstr='SeSr'):
-  data = base64.b64encode(''.join((  # No newlines.
-      'openssh-key-v1\\0\\0\\0\\0\\4none\\0\\0\\0\\4none\\0\\0\\0\\0\\0\\0\\0\\1\\0\\0\\0\\x33'
-      '\\0\\0\\0\\x0bssh-ed25519\\0\\0\\0 ', public_key,
-      struct.pack('>L', 131 + len(comment) + (-(len(comment) + 3) & 7)),
-      checkstr, checkstr, '\\0\\0\\0\\x0bssh-ed25519\\0\\0\\0 ', public_key,
-      '\\0\\0\\0@', private_key[:32], public_key, struct.pack('>L', len(comment)),
-      comment, '\\1\\2\\3\\4\\5\\6\\7'[:-(len(comment) + 3) & 7])))
-  output = ['-----BEGIN OPENSSH PRIVATE KEY-----\\n']
+    public_key, private_key, comment="SeSc", checkstr="SeSr"):
+  data = base64.b64encode("".join((  # No newlines.
+      "openssh-key-v1\0\0\0\0\4none\0\0\0\4none\0\0\0\0\0\0\0\1\0\0\0\x33"
+      "\0\0\0\x0bssh-ed25519\0\0\0 ", public_key,
+      struct.pack(">L", 131 + len(comment) + (-(len(comment) + 3) & 7)),
+      checkstr, checkstr, "\0\0\0\x0bssh-ed25519\0\0\0 ", public_key,
+      "\0\0\0@", private_key[:32], public_key, struct.pack(">L", len(comment)),
+      comment, "\1\2\3\4\5\6\7"[:-(len(comment) + 3) & 7])))
+  output = ["-----BEGIN OPENSSH PRIVATE KEY-----\n"]
   for i in xrange(0, len(data), 70):
     output.append(data[i : i + 70])
-    output.append('\\n')
-  output.append('-----END OPENSSH PRIVATE KEY-----\\n')
-  return ''.join(output)
+    output.append("\n")
+  output.append("-----END OPENSSH PRIVATE KEY-----\n")
+  return "".join(output)
 
 
-def build_openssh_public_key_ed25519(public_key, comment='SeSc'):
-  return 'ssh-ed25519 %s %s\\n' % (
-      base64.b64encode(''.join(('\\0\\0\\0\\x0bssh-ed25519\\0\\0\\0 ', public_key))),
+def build_openssh_public_key_ed25519(public_key, comment="SeSc"):
+  return "ssh-ed25519 %s %s\n" % (
+      base64.b64encode("".join(("\0\0\0\x0bssh-ed25519\0\0\0 ", public_key))),
       comment)
 
 def main_pre(uk):
-  tdir = os.getenv('T', '')
-  assert tdir, 'Empty tmp dirname.'
+  tdir = os.getenv("T", "")
+  assert tdir, "Empty tmp dirname."
 
-  hk = os.getenv('HK', '').strip()  # \$HK.
+  hk = os.getenv("HK", "").strip()
   if hk:
-    host_key = ''
-    if not host_key and hk.startswith('ssh-ed25519'):
+    host_key = ""
+    if not host_key and hk.startswith("ssh-ed25519"):
       hks = hk.split()
-      assert len(hks) == 3, 'Bad host key format: %r' % hk
-      assert hks[0] == 'h' and hks[1] == 'ssh-ed25519', 'Bad host key fields: %r' % hk
+      assert len(hks) == 3, "Bad host key format: %r" % hk
+      assert hks[0] == "h" and hks[1] == "ssh-ed25519", "Bad host key fields: %r" % hk
       try:
         host_key_data = base64.b64decode(hks[2])
       except (TypeError, ValueError):
-        assert 0, 'Bad host key syntax: %r' % hk
-      assert len(host_key_data) == 51 and host_key_data.startswith('\\0\\0\\0\\x0bssh-ed25519\\0\\0\\0 '), 'Bad host key encoded format: %r' % hk
+        assert 0, "Bad host key syntax: %r" % hk
+      assert len(host_key_data) == 51 and host_key_data.startswith("\0\0\0\x0bssh-ed25519\0\0\0 "), "Bad host key encoded format: %r" % hk
       host_key = host_key_data[19:]
     if not host_key and len(hk) == 64:
       try:
-        host_key = hk.decode('hex')
-        if len(host_key) != 32 or host_key.encode('hex') != hk.lower():
-          host_key = ''
+        host_key = hk.decode("hex")
+        if len(host_key) != 32 or host_key.encode("hex") != hk.lower():
+          host_key = ""
       except (TypeError, ValueError):
-        host_key = ''
-    if not host_key and hk.endswith('=') and len(hk) == 44:
+        host_key = ""
+    if not host_key and hk.endswith("=") and len(hk) == 44:
       try:
         host_key = base64.b64decode(hk)
         if len(host_key) != 32 or base64.b64encode(host_key) != hk:
-          host_key = ''
+          host_key = ""
       except (TypeError, ValueError):
-        host_key = ''
-    assert len(host_key) == 32, 'Bad host key: %r' % hk
-    open(tdir + '/known_hosts', 'ab').write('h %s\\n' % build_openssh_public_key_ed25519(host_key, comment='').rstrip())
+        host_key = ""
+    assert len(host_key) == 32, "Bad host key: %r" % hk
+    open(tdir + "/known_hosts", "ab").write("h %s\n" % build_openssh_public_key_ed25519(host_key, comment="").rstrip())
 
-  assert uk, 'Empty user key.'
-  private_key = ''
+  assert uk, "Empty user key."
+  private_key = ""
   if not private_key and len(uk) == 64:
     try:
-      private_key = uk.decode('hex')
-      if len(private_key) != 32 or private_key.encode('hex') != uk.lower():
-        private_key = ''
+      private_key = uk.decode("hex")
+      if len(private_key) != 32 or private_key.encode("hex") != uk.lower():
+        private_key = ""
     except (TypeError, ValueError):
-      private_key = ''
-  if not private_key and uk.endswith('=') and len(uk) == 44:
+      private_key = ""
+  if not private_key and uk.endswith("=") and len(uk) == 44:
     try:
       private_key = base64.b64decode(uk)
       if len(private_key) != 32 or base64.b64encode(private_key) != uk:
-        private_key = ''
+        private_key = ""
     except (TypeError, ValueError):
-      private_key = ''
+      private_key = ""
   if not private_key:
     # Do many iterations to make dictionary attacks harder.
     digest_cons, iterations = hashlib.sha512, 100000
-    private_key = uk + 'SeKd'
+    private_key = uk + "SeKd"
     for i in xrange(iterations):
       h = digest_cons(str(i))
-      h.update('SeKd')
+      h.update("SeKd")
       h.update(private_key)
-      h.update('SeKD')
+      h.update("SeKD")
       h.update(str(i))
       private_key = h.digest()
     private_key = private_key[:32]
@@ -188,33 +212,33 @@ def main_pre(uk):
   if len(private_key) != 32:
     private_key = (private_key * (32 / len(private_key) + 1))[:32]
   public_key = get_public_key_ed25519_unsafe(private_key)
-  open(tdir + '/id_sesamessh', 'wb').write(build_openssh_private_key_ed25519(public_key, private_key))
-  if os.getenv('IS_SETUP', ''):
-    open(tdir + '/id_sesamessh.setup', 'wb').write(''.join((
-        'info: sesamessh user key: %s\\n' % uk,
-        'info: sesamessh user key b64: %s\\n' % base64.b64encode(private_key),
-        'info: sesamessh user key hex: %s\\n' % private_key.encode('hex'),
-        'info: sesamessh user public key: %s' % build_openssh_public_key_ed25519(public_key),
+  open(tdir + "/id_sesamessh", "wb").write(build_openssh_private_key_ed25519(public_key, private_key))
+  if os.getenv("IS_SETUP", ""):
+    open(tdir + "/id_sesamessh.setup", "wb").write("".join((
+        "info: sesamessh user key: %s\n" % uk,
+        "info: sesamessh user key b64: %s\n" % base64.b64encode(private_key),
+        "info: sesamessh user key hex: %s\n" % private_key.encode("hex"),
+        "info: sesamessh user public key: %s" % build_openssh_public_key_ed25519(public_key),
         )))
 
 def main_post_setup():
-  hk = os.getenv('HK', '').strip()  # \$HK.
+  hk = os.getenv("HK", "").strip()
   hks = hk.split()
-  assert len(hks) == 3, 'Bad host key format: %r' % hk
-  assert hks[0] == 'h' and hks[1] == 'ssh-ed25519', 'Bad host key fields: %r' % hk
+  assert len(hks) == 3, "Bad host key format: %r" % hk
+  assert hks[0] == "h" and hks[1] == "ssh-ed25519", "Bad host key fields: %r" % hk
   try:
     host_key_data = base64.b64decode(hks[2])
   except (TypeError, ValueError):
-    assert 0, 'Bad host key syntax: %r' % hk
-  assert len(host_key_data) == 51 and host_key_data.startswith('\\0\\0\\0\\x0bssh-ed25519\\0\\0\\0 '), 'Bad host key encoded format: %r' % hk
+    assert 0, "Bad host key syntax: %r" % hk
+  assert len(host_key_data) == 51 and host_key_data.startswith("\0\0\0\x0bssh-ed25519\0\0\0 "), "Bad host key encoded format: %r" % hk
   host_key = host_key_data[19:]
-  tdir = os.getenv('T', '')
-  assert tdir, 'Empty tmp dirname.'
-  open(tdir + '/id_sesamessh.setup', 'wb').write(''.join((
-      'info: sesamessh host key b64: %s\\n' % base64.b64encode(host_key),
-      'info: sesamessh host key hex: %s\\n' % host_key.encode('hex'),
-      'info: sesamessh host public key: %s\\n' % build_openssh_public_key_ed25519(host_key, comment='').rstrip(),
-      )))"
+  tdir = os.getenv("T", "")
+  assert tdir, "Empty tmp dirname."
+  open(tdir + "/id_sesamessh.setup", "wb").write("".join((
+      "info: sesamessh host key b64: %s\n" % base64.b64encode(host_key),
+      "info: sesamessh host key hex: %s\n" % host_key.encode("hex"),
+      "info: sesamessh host public key: %s\n" % build_openssh_public_key_ed25519(host_key, comment="").rstrip(),
+      )))'
 
 
 export HK T IS_SETUP
@@ -232,8 +256,18 @@ $PYCODE" | "$PYTHON" -c "import sys; _uk = sys.stdin.readline().strip(); exec sy
 test "$?" = 0 || die "Python failed: $PYTHON"
 
 unset SSH_AUTH_SOCK SSH_AUTH_SOCK_FAST  # Disable use of ssh-agent.
+
 SHKC_ARGS='-o StrictHostKeyChecking=no'
+Q_ARGS=
 test "$HK" && SHKC_ARGS='-o StrictHostKeyChecking=yes'
+# Unfortunately -q suppresses this ssh error as well: ``..: Permission
+# denied (publickey).'', so we won't add -q automatically.
+#if test -z "$HK"; then
+#  Q_ARGS='-q'  # Suppress: Warning: Permanently added 'h' (ED25519) to the list of known hosts.'
+#  for ARG in $TARGET "$@"; do
+#    test "${ARG#-v}" = "$ARG" || Q_ARGS=  # -v takes precedence.
+#  done
+#fi
 
 SLEEP_PID=
 if test -z "$IS_SETUP"; then
@@ -253,6 +287,9 @@ fi
 # * Uses a different private key format. (We could convert.)
 #
 # No space after -F to make ssh_connect_fast ignore ~/.ssh/config .
+#
+# This SSH message is normal if $HK is empty, can't be suppressed selectively:
+# ``Warning: Permanently added 'h' (ED25519) to the list of known hosts.''.
 ssh -F/dev/null \
     -o UserKnownHostsFile="$T/known_hosts" \
     -o GlobalKnownHostsFile=/dev/null \
@@ -264,7 +301,7 @@ ssh -F/dev/null \
     -o HashKnownHosts=no \
     -o UpdateHostKeys=no \
     -o CheckHostIP=no \
-    $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
+    $Q_ARGS $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
 STATUS="$?"
 if test "$SLEEP_PID"; then
   kill "$SLEEP_PID" 2>/dev/null &&
