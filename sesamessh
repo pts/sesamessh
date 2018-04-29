@@ -313,6 +313,9 @@ fi
 #
 # This SSH message is normal if $HK is empty, can't be suppressed selectively:
 # ``Warning: Permanently added 'h' (ED25519) to the list of known hosts.''.
+#
+# `-o UpdateHostKeys=no' would need OpenSSH 6.8, while Ubuntu 14.04 has only
+# 6.6. So we don't enable it.
 ssh -F/dev/null \
     -o UserKnownHostsFile="$T/known_hosts" \
     -o GlobalKnownHostsFile=/dev/null \
@@ -322,7 +325,6 @@ ssh -F/dev/null \
     -o IdentitiesOnly=yes \
     -o BatchMode=yes \
     -o HashKnownHosts=no \
-    -o UpdateHostKeys=no \
     -o CheckHostIP=no \
     $Q_ARGS $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
 STATUS="$?"
