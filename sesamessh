@@ -7,8 +7,6 @@
 # $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
 # $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
-# TODO(pts): Add random user key generation (gpg --armor --gen-random 1 32).
-#
 
 if true; then  # Read entire script before running it.
 rmtmp() {  # Will be overwritten later.
@@ -203,6 +201,8 @@ def main_pre(uk):
 
   assert uk, "Empty user key."
   private_key = ""
+  if not private_key and uk == "--random":
+    private_key = os.urandom(32)
   if not private_key and len(uk) == 64:
     try:
       private_key = uk.decode("hex")
