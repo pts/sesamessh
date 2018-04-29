@@ -7,6 +7,11 @@
 # $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
 # $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
+# TODO(pts): Allow --setup to be specified in $TARGET.
+# TODO(pts): Add uk to each iteration of key derivation.
+# TODO(pts): Add ($TARGET) to user key prompt and host key prompt.
+# TODO(pts): Add random user key generation (gpg --armor --gen-random 1 32).
+#
 
 if true; then  # Read entire script before running it.
 rmtmp() {  # Will be overwritten later.
