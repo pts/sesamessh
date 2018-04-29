@@ -1,0 +1,125 @@
+#! /bin/sh --
+# Portable SSH client. https://github.com/pts/paperssh/blob/master/sesamessh
+
+rmtmp() {
+  :
+}
+die() {
+  echo "fatal: $*" >&2
+  rmtmp
+  exit 1
+}
+
+# Needed in $SHCK_ARGS below.
+test "$ZSH_VERSION" && setopt shwordsplit 2>/dev/null
+
+unset TARGET UK HK  # Unexport.
+echo -n 'sesamessh target: '
+read TARGET </dev/tty
+test "$TARGET" || die 'target must not be empty'
+echo -n 'sesamessh user key: '
+read UK </dev/tty
+test "$UK" || die 'user key must not be empty'
+echo -n 'sesamessh host key: '
+read HK </dev/tty
+
+T="${TMPDIR:-/tmp}/sesamessh.tmp.$$"
+mkdir -- "$T" || die "cannot create temporary directory: $T"
+rmtmp() {
+  rm -f -- "$T"/* 2>/dev/null
+  rmdir -- "$T" 2>/dev/null
+}
+chmod 700 -- "$T" || die "cannot chmod temporary directory: $T"
+(: >"$T/id_sesamessh" && chmod 600 -- "$T/id_sesamessh") || die "cannot create or chmod private key file: $T/id_sesamessh"
+(: >"$T/id_sesamessh.pub" && chmod 600 -- "$T/id_sesamessh.pub") || die "cannot create or chmod public key file: $T/id_sesamessh.pub"
+(: >"$T/known_hosts" && chmod 600 -- "$T/known_hosts") || die "cannot create or chmod known_hosts file: $T/id_sesamessh.pub"
+if test "$HK"; then
+  echo "h ssh-ed25519 $HK" >>"$T/known_hosts" || die "cannot populate known_hosts file: $T/known_hosts"
+fi
+# TODO(pts): Create SSH config file ($T/config), hide even more options from command-line.
+cd "$T" || die "chdir failed: $T"
+
+# !! find python with haslib.sha512
+# !! find python2
+export UK  # !! Don't use env, for safety.
+export T
+
+# Creates final contents of id_sesamessh and id_sesamessh.pub.
+python - -fa <<'ENDPY'
+import base64, hashlib, os, struct, sys
+
+def get_public_key_ed25519_unsafe(private_key, _bpow=[]):
+  h = hashlib.sha512(private_key).digest()[:32]
+  e = ((1 << 254) | (int(h[::-1].encode("hex"), 16) & ~(7 | 1 << 255))) % (
+      (1 << 252) + 0x14def9dea2f79cd65812631a5cf5d3ed)
+  q = (1 << 255) - 19
+  if not _bpow:  # Compute it only for the first time.
+    _bpow.append((
+        0x216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a,
+        0x6666666666666666666666666666666666666666666666666666666666666658, 1,
+        0x67875f0fd78b766566ea4e8e64abe37d20f09f80775152f56dde8ab3a5b7dda3))
+    for i in xrange(252):  # _bpow[i] == scalarmult(B, 2**i).
+      x1, y1, z1, t1 = _bpow[-1]
+      a, b, c = x1 * x1 % q, y1 * y1 % q, ((z1 * z1) << 1) % q
+      hh, g = -a - b, b - a
+      ee, f = ((x1 + y1) * (x1 + y1) + hh) % q, g - c
+      _bpow.append((ee * f % q, g * hh % q, f * g % q, ee * hh % q))
+  x, y, z, t = 0, 1, 1, 0
+  m = 0xa406d9dc56dffce7198e80f2eef3d13000e0149a8283b156ebd69b9426b2f146
+  for i in xrange(253):
+    if e & 1:
+      x2, y2, z2, t2 = _bpow[i]
+      a, b = (y - x) * (y2 - x2) % q, (y + x) * (y2 + x2) % q
+      c, dd = t * m % q * t2 % q, ((z * z2) << 1) % q
+      ee, f, g, hh = b - a, dd - c, dd + c, b + a
+      x, y, z, t = ee * f % q, g * hh % q, f * g % q, ee * hh % q
+    e >>= 1
+  zi = pow(z, q - 2, q)
+  x, y = (x * zi) % q, (y * zi) % q
+  return ("%064x" % (y & ~(1 << 255) | ((x & 1) << 255))).decode("hex")[::-1]
+
+
+def build_openssh_private_key_ed25519(
+    public_key, private_key, comment='SeSc', checkstr='SeSr'):
+  data = base64.b64encode("".join((  # No newlines.
+      "openssh-key-v1\0\0\0\0\4none\0\0\0\4none\0\0\0\0\0\0\0\1\0\0\0\x33"
+      "\0\0\0\x0bssh-ed25519\0\0\0 ", public_key,
+      struct.pack(">L", 131 + len(comment) + (-(len(comment) + 3) & 7)),
+      checkstr, checkstr, "\0\0\0\x0bssh-ed25519\0\0\0 ", public_key,
+      "\0\0\0@", private_key[:32], public_key, struct.pack(">L", len(comment)),
+      comment, "\1\2\3\4\5\6\7"[:-(len(comment) + 3) & 7])))
+  output = ["-----BEGIN OPENSSH PRIVATE KEY-----\n"]
+  for i in xrange(0, len(data), 70):
+    output.append(data[i : i + 70])
+    output.append("\n")
+  output.append("-----END OPENSSH PRIVATE KEY-----\n")
+  return "".join(output)
+
+
+def build_openssh_public_key_ed25519(public_key, comment='SeSc'):
+  return "ssh-ed25519 %s %s\n" % (
+      base64.b64encode("".join(("\0\0\0\x0bssh-ed25519\0\0\0 ", public_key))),
+      comment)
+
+private_key = os.getenv('UK', '')  # $UK.
+assert private_key, 'Empty private key.'
+tdir = os.getenv('T', '')
+assert private_key, 'Empty tmp dir.'
+if len(private_key) != 32:
+  private_key = (private_key * (32 / len(private_key) + 1))[:32]
+public_key = get_public_key_ed25519_unsafe(private_key)
+open(tdir + '/id_sesamessh', 'wb').write(build_openssh_private_key_ed25519(public_key, private_key))
+open(tdir + '/id_sesamessh.pub', 'wb').write(build_openssh_public_key_ed25519(public_key))
+ENDPY
+test "$?" = 0 || die 'python failed'
+
+# !! Does it use ~/.ssh/config
+unset SSH_AUTH_SOCK  # Disable use of ssh-agent.
+SHKC_ARGS='-o StrictHostKeyChecking=no'
+test "$HK" && SHKC_ARGS='-o StrictHostKeyChecking=yes'
+# !! ssh-new: /usr/local/ssh-new/ssh
+ssh -F /dev/null -o UserKnownHostsFile="$T/known_hosts" -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=h -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256@libssh.org -o IdentitiesOnly=yes -o BatchMode=yes -o HashKnownHosts=no -o UpdateHostKeys=no -o CheckHostIP=no $SHKC_ARGS -i "$T/id_sesamessh" $TARGET
+STATUS="$?"
+#trap rmtmp EXIT
+rmtmp  # !! Also run it in 10 seconds after ssh startup.
+exit "$STATUS"
