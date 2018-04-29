@@ -7,7 +7,6 @@
 # $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
 # $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
-# TODO(pts): Allow --setup to be specified in $TARGET.
 # TODO(pts): Add uk to each iteration of key derivation.
 # TODO(pts): Add random user key generation (gpg --armor --gen-random 1 32).
 #
@@ -49,7 +48,14 @@ test "$PYTHON" || die 'working Python not found'
 if test $# = 0; then
   echo -n 'Enter sesamessh target: ' >&2
   read TARGET </dev/tty
+  TARGET="${TARGET% }"
+  TARGET="${TARGET# }"
   test "$TARGET" || die 'target must not be empty'
+  if test "${TARGET#setup }" != "$TARGET" || test "${TARGET#--setup }" != "$TARGET"; then
+    IS_SETUP=1
+    TARGET="${TARGET#*setup }"
+  fi
+  
   # Dash and busybox sh don't support this:
   # test -z "$BASH_SOURCE" && test -z "$ZSH_SCRIPT"
   # This is for interactive SSH in `curl ... | sh'
