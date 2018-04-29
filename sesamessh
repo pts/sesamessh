@@ -30,6 +30,8 @@ fi
 # Find a Python which can do the operations we need.
 # Currently only Python 2.4, 2.5, 2.6 and 2.7 are supported, Pythen 3 isn't.
 # For Python 2.4, the hashlib package needs to be installed as an extra.
+#
+# TODO(pts): Add Python 3 compatibility.
 PYCODE='import base64, hashlib, os, struct, sys; print base64.b64encode(hashlib.sha512(struct.pack(">H", int(os.getenv("HK")))).digest().encode("hex").upper().decode("hex"))'
 PYTHON=
 for PYTHON in python python2 python2.7 python2.6 python2.5 python2.4; do
