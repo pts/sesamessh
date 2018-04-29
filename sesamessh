@@ -48,7 +48,7 @@ done
 test "$PYTHON" || die 'working Python not found'
 
 if test $# = 0; then
-  echo -n 'Enter sesamessh target: '
+  echo -n 'Enter sesamessh target: ' >&2
   read TARGET </dev/tty
   test "$TARGET" || die 'target must not be empty'
   # Dash and busybox sh don't support this:
@@ -67,7 +67,7 @@ if test "$SESAMESSH_UK"; then
   unset SESAMESSH_UK  # Prevent exporting.
 else
   # We could use `read -s' here, but Dash doesn't support it.
-  echo -n 'Enter sesamessh user key: '
+  echo -n 'Enter sesamessh user key: ' >&2
   # Any byte except for \0 and \n is supported in $UK. Accented characters
   # (non-ASCII bytes) are passed as is, but they are not recommended in case
   # the encoding of the TTY changes in the future.
@@ -80,7 +80,7 @@ if test "$SESAMESSH_HK"; then
   HK="$SESAMESSH_HK"
   unset SESAMESSH_HK  # Prevent exporting.
 else
-  echo -n 'Enter sesamessh host key: '
+  echo -n 'Enter sesamessh host key: ' >&2
   read HK </dev/tty
 fi
 test "$HK" = . && HK=
