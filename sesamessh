@@ -1,5 +1,9 @@
 #! /bin/sh --
 # Portable SSH client. https://github.com/pts/paperssh/blob/master/sesamessh
+# !! update URL
+
+# !! verify shell compatibility: Bash, Zsh, Dash, Busybox sh etc.
+# !! make it work with dropbear dbclient (no way to disable password auth)
 
 rmtmp() {
   :
@@ -13,14 +17,22 @@ die() {
 # Needed in $SHCK_ARGS below.
 test "$ZSH_VERSION" && setopt shwordsplit 2>/dev/null
 
-unset TARGET UK HK  # Unexport.
-echo -n 'sesamessh target: '
-read TARGET </dev/tty
+unset TARGET UK HK IS_SETUP  # Unexport.
+IS_SETUP=
+if test "$1" = setup || test "$1" = --setup; then
+  IS_SETUP=1
+fi
+if test $# = 0; then
+  echo -n 'Enter sesamessh target: '
+  read TARGET </dev/tty
+else
+  TARGET=
+fi
 test "$TARGET" || die 'target must not be empty'
-echo -n 'sesamessh user key: '
+echo -n 'Enter sesamessh user key: '
 read UK </dev/tty
 test "$UK" || die 'user key must not be empty'
-echo -n 'sesamessh host key: '
+echo -n 'Enter sesamessh host key: '
 read HK </dev/tty
 
 T="${TMPDIR:-/tmp}/sesamessh.tmp.$$"
@@ -32,7 +44,10 @@ rmtmp() {
 chmod 700 -- "$T" || die "cannot chmod temporary directory: $T"
 (: >"$T/id_sesamessh" && chmod 600 -- "$T/id_sesamessh") || die "cannot create or chmod private key file: $T/id_sesamessh"
 (: >"$T/id_sesamessh.pub" && chmod 600 -- "$T/id_sesamessh.pub") || die "cannot create or chmod public key file: $T/id_sesamessh.pub"
-(: >"$T/known_hosts" && chmod 600 -- "$T/known_hosts") || die "cannot create or chmod known_hosts file: $T/id_sesamessh.pub"
+if test "$IS_SETUP"; then
+  (: >"$T/id_sesamessh.setup" && chmod 600 -- "$T/id_sesamessh.setup") || die "cannot create or chmod setup info file: $T/id_sesamessh.setup"
+fi
+(: >"$T/known_hosts" && chmod 600 -- "$T/known_hosts") || die "cannot create or chmod known_hosts file: $T/known_hosts"
 if test "$HK"; then
   echo "h ssh-ed25519 $HK" >>"$T/known_hosts" || die "cannot populate known_hosts file: $T/known_hosts"
 fi
@@ -42,7 +57,7 @@ cd "$T" || die "chdir failed: $T"
 # !! find python with haslib.sha512
 # !! find python2
 export UK  # !! Don't use env, for safety.
-export T
+export T IS_SETUP
 
 # Creates final contents of id_sesamessh and id_sesamessh.pub.
 python - -fa <<'ENDPY'
@@ -111,14 +126,18 @@ public_key = get_public_key_ed25519_unsafe(private_key)
 open(tdir + '/id_sesamessh', 'wb').write(build_openssh_private_key_ed25519(public_key, private_key))
 open(tdir + '/id_sesamessh.pub', 'wb').write(build_openssh_public_key_ed25519(public_key))
 ENDPY
+echo -n 'info: sesamessh public key: ' >&2
+cat "$T/id_sesamessh.pub" || die 'displaying the public key failed'
+rm -f "$T/id_sesamessh.pub" 2>/dev/null  # ssh(1) doesn't need it.
 test "$?" = 0 || die 'python failed'
+cat "$T/known_hosts"
 
 # !! Does it use ~/.ssh/config
 unset SSH_AUTH_SOCK  # Disable use of ssh-agent.
 SHKC_ARGS='-o StrictHostKeyChecking=no'
 test "$HK" && SHKC_ARGS='-o StrictHostKeyChecking=yes'
 # !! ssh-new: /usr/local/ssh-new/ssh
-ssh -F /dev/null -o UserKnownHostsFile="$T/known_hosts" -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=h -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256@libssh.org -o IdentitiesOnly=yes -o BatchMode=yes -o HashKnownHosts=no -o UpdateHostKeys=no -o CheckHostIP=no $SHKC_ARGS -i "$T/id_sesamessh" $TARGET
+ssh -F /dev/null -o UserKnownHostsFile="$T/known_hosts" -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=h -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256@libssh.org -o IdentitiesOnly=yes -o BatchMode=yes -o HashKnownHosts=no -o UpdateHostKeys=no -o CheckHostIP=no $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
 STATUS="$?"
 #trap rmtmp EXIT
 rmtmp  # !! Also run it in 10 seconds after ssh startup.
