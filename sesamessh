@@ -17,10 +17,11 @@ die() {
 # Needed in $SHCK_ARGS below.
 test "$ZSH_VERSION" && setopt shwordsplit 2>/dev/null
 
-unset TARGET UK HK IS_SETUP  # Unexport.
+unset TARGET UK HK IS_SETUP STATUS  # Unexport.
 IS_SETUP=
 if test "$1" = setup || test "$1" = --setup; then
   IS_SETUP=1
+  shift
 fi
 if test $# = 0; then
   echo -n 'Enter sesamessh target: '
@@ -29,11 +30,13 @@ else
   TARGET=
 fi
 test "$TARGET" || die 'target must not be empty'
+# We could use `read -s' here, but Dash doesn't support it.
 echo -n 'Enter sesamessh user key: '
 read UK </dev/tty
 test "$UK" || die 'user key must not be empty'
 echo -n 'Enter sesamessh host key: '
 read HK </dev/tty
+test "$HK" = . && HK=
 
 T="${TMPDIR:-/tmp}/sesamessh.tmp.$$"
 mkdir -- "$T" || die "cannot create temporary directory: $T"
@@ -43,24 +46,21 @@ rmtmp() {
 }
 chmod 700 -- "$T" || die "cannot chmod temporary directory: $T"
 (: >"$T/id_sesamessh" && chmod 600 -- "$T/id_sesamessh") || die "cannot create or chmod private key file: $T/id_sesamessh"
-(: >"$T/id_sesamessh.pub" && chmod 600 -- "$T/id_sesamessh.pub") || die "cannot create or chmod public key file: $T/id_sesamessh.pub"
 if test "$IS_SETUP"; then
   (: >"$T/id_sesamessh.setup" && chmod 600 -- "$T/id_sesamessh.setup") || die "cannot create or chmod setup info file: $T/id_sesamessh.setup"
 fi
 (: >"$T/known_hosts" && chmod 600 -- "$T/known_hosts") || die "cannot create or chmod known_hosts file: $T/known_hosts"
-if test "$HK"; then
-  echo "h ssh-ed25519 $HK" >>"$T/known_hosts" || die "cannot populate known_hosts file: $T/known_hosts"
-fi
 # TODO(pts): Create SSH config file ($T/config), hide even more options from command-line.
 cd "$T" || die "chdir failed: $T"
 
 # !! find python with haslib.sha512
 # !! find python2
+# !! verify python2.4 with hashlib
 export UK  # !! Don't use env, for safety.
-export T IS_SETUP
+export HK T IS_SETUP
 
-# Creates final contents of id_sesamessh and id_sesamessh.pub.
-python - -fa <<'ENDPY'
+# Creates final contents of id_sesamessh and id_sesamessh.setup.
+python - <<'ENDPY'
 import base64, hashlib, os, struct, sys
 
 def get_public_key_ed25519_unsafe(private_key, _bpow=[]):
@@ -116,29 +116,140 @@ def build_openssh_public_key_ed25519(public_key, comment='SeSc'):
       base64.b64encode("".join(("\0\0\0\x0bssh-ed25519\0\0\0 ", public_key))),
       comment)
 
-private_key = os.getenv('UK', '')  # $UK.
-assert private_key, 'Empty private key.'
 tdir = os.getenv('T', '')
-assert private_key, 'Empty tmp dir.'
+assert tdir, 'Empty tmp dirname.'
+
+hk = os.getenv('HK', '').strip()  # $HK.
+if hk:
+  host_key = ''
+  if not host_key and hk.startswith('ssh-ed25519'):
+    hks = hk.split()
+    assert len(hks) == 3, 'Bad host key format: %r' % hk
+    assert hks[0] == 'h' and hks[1] == 'ssh-ed25519', 'Bad host key fields: %r' % hk
+    try:
+      host_key_data = base64.b64decode(hks[2])
+    except (TypeError, ValueError):
+      assert 0, 'Bad host key syntax: %r' % hk
+    assert len(host_key_data) == 51 and host_key_data.startswith('\0\0\0\x0bssh-ed25519\0\0\0 '), 'Bad host key encoded format: %r' % hk
+    host_key = host_key_data[19:]
+  if not host_key and len(hk) == 64:
+    try:
+      host_key = hk.decode('hex')
+      if len(host_key) != 32 or host_key.encode('hex') != hk.lower():
+        host_key = ''
+    except (TypeError, ValueError):
+      host_key = ''
+  if not host_key and hk.endswith('=') and len(hk) == 44:
+    try:
+      host_key = base64.b64decode(hk)
+      if len(host_key) != 32 or base64.b64encode(host_key) != hk:
+        host_key = ''
+    except (TypeError, ValueError):
+      host_key = ''
+  assert len(host_key) == 32, 'Bad host key: %r' % hk
+  open(tdir + '/known_hosts', 'ab').write('h %s\n' % build_openssh_public_key_ed25519(host_key, comment='').rstrip())
+
+uk = os.getenv('UK', '').strip()  # $UK.
+assert uk, 'Empty user key.'
+private_key = ''
+if not private_key and len(uk) == 64:
+  try:
+    private_key = uk.decode('hex')
+    if len(private_key) != 32 or private_key.encode('hex') != uk.lower():
+      private_key = ''
+  except (TypeError, ValueError):
+    private_key = ''
+if not private_key and uk.endswith('=') and len(uk) == 44:
+  try:
+    private_key = base64.b64decode(uk)
+    if len(private_key) != 32 or base64.b64encode(private_key) != uk:
+      private_key = ''
+  except (TypeError, ValueError):
+    private_key = ''
+if not private_key:
+  # Do many iterations to make dictionary attacks harder.
+  digest_cons, iterations = hashlib.sha512, 100000
+  private_key = uk + 'SeKd'
+  for i in xrange(iterations):
+    h = digest_cons(str(i))
+    h.update('SeKd')
+    h.update(private_key)
+    h.update('SeKD')
+    h.update(str(i))
+    private_key = h.digest()
+  private_key = private_key[:32]
+assert len(private_key) == 32
 if len(private_key) != 32:
   private_key = (private_key * (32 / len(private_key) + 1))[:32]
 public_key = get_public_key_ed25519_unsafe(private_key)
 open(tdir + '/id_sesamessh', 'wb').write(build_openssh_private_key_ed25519(public_key, private_key))
-open(tdir + '/id_sesamessh.pub', 'wb').write(build_openssh_public_key_ed25519(public_key))
+if os.getenv('IS_SETUP', ''):
+  open(tdir + '/id_sesamessh.setup', 'wb').write(''.join((
+      'info: sesamessh user key: %s\n' % uk,
+      'info: sesamessh user key b64: %s\n' % base64.b64encode(private_key),
+      'info: sesamessh user key hex: %s\n' % private_key.encode('hex'),
+      'info: sesamessh user public key: %s' % build_openssh_public_key_ed25519(public_key),
+      )))
 ENDPY
-echo -n 'info: sesamessh public key: ' >&2
-cat "$T/id_sesamessh.pub" || die 'displaying the public key failed'
-rm -f "$T/id_sesamessh.pub" 2>/dev/null  # ssh(1) doesn't need it.
 test "$?" = 0 || die 'python failed'
-cat "$T/known_hosts"
 
-# !! Does it use ~/.ssh/config
-unset SSH_AUTH_SOCK  # Disable use of ssh-agent.
+unset SSH_AUTH_SOCK SSH_AUTH_SOCK_FAST  # Disable use of ssh-agent.
 SHKC_ARGS='-o StrictHostKeyChecking=no'
 test "$HK" && SHKC_ARGS='-o StrictHostKeyChecking=yes'
 # !! ssh-new: /usr/local/ssh-new/ssh
-ssh -F /dev/null -o UserKnownHostsFile="$T/known_hosts" -o GlobalKnownHostsFile=/dev/null -o HostKeyAlias=h -o HostKeyAlgorithms=ssh-ed25519 -o KexAlgorithms=curve25519-sha256@libssh.org -o IdentitiesOnly=yes -o BatchMode=yes -o HashKnownHosts=no -o UpdateHostKeys=no -o CheckHostIP=no $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
+# !! Does it use ~/.ssh/config ?? Make sure it doesn't, even with ssh_connect_fast.
+# No space after -F to make ssh_connect_fast ignore ~/.ssh/config .
+ssh -F/dev/null \
+    -o UserKnownHostsFile="$T/known_hosts" \
+    -o GlobalKnownHostsFile=/dev/null \
+    -o HostKeyAlias=h \
+    -o HostKeyAlgorithms=ssh-ed25519 \
+    -o KexAlgorithms=curve25519-sha256@libssh.org \
+    -o IdentitiesOnly=yes \
+    -o BatchMode=yes \
+    -o HashKnownHosts=no \
+    -o UpdateHostKeys=no \
+    -o CheckHostIP=no \
+    $SHKC_ARGS -i "$T/id_sesamessh" $TARGET "$@"
 STATUS="$?"
-#trap rmtmp EXIT
+if test "$IS_SETUP"; then
+  echo "info: sesamessh target: $TARGET $*" >&2
+  cat "$T/id_sesamessh.setup" >&2
+  HK="$(cat "$T/known_hosts")"
+  test "$?" = 0 || die "cat failed: $T/known_hosts"
+  if test "$HK"; then
+    export HK
+    python - <<'ENDPY'
+import base64, hashlib, os, struct, sys
+
+def build_openssh_public_key_ed25519(public_key, comment='SeSc'):
+  return "ssh-ed25519 %s %s\n" % (
+      base64.b64encode("".join(("\0\0\0\x0bssh-ed25519\0\0\0 ", public_key))),
+      comment)
+
+hk = os.getenv('HK', '').strip()  # $HK.
+hks = hk.split()
+assert len(hks) == 3, 'Bad host key format: %r' % hk
+assert hks[0] == 'h' and hks[1] == 'ssh-ed25519', 'Bad host key fields: %r' % hk
+try:
+  host_key_data = base64.b64decode(hks[2])
+except (TypeError, ValueError):
+  assert 0, 'Bad host key syntax: %r' % hk
+assert len(host_key_data) == 51 and host_key_data.startswith('\0\0\0\x0bssh-ed25519\0\0\0 '), 'Bad host key encoded format: %r' % hk
+host_key = host_key_data[19:]
+tdir = os.getenv('T', '')
+assert tdir, 'Empty tmp dirname.'
+open(tdir + '/id_sesamessh.setup', 'wb').write(''.join((
+    'info: sesamessh host key b64: %s\n' % base64.b64encode(host_key),
+    'info: sesamessh host key hex: %s\n' % host_key.encode('hex'),
+    'info: sesamessh host public key: %s\n' % build_openssh_public_key_ed25519(host_key, comment='').rstrip(),
+    )))
+ENDPY
+  test "$?" = 0 || die 'python for setup failed'
+  cat "$T/id_sesamessh.setup" >&2
+  else
+    echo "error: known_hosts not populated by ssh: $T/known_hosts" >&2
+  fi
+fi
 rmtmp  # !! Also run it in 10 seconds after ssh startup.
 exit "$STATUS"
