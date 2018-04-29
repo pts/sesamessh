@@ -296,7 +296,7 @@ SLEEP_PID=
 if test -z "$IS_SETUP"; then
   # This will remove the private key files etc. early, just 10 seconds after
   # ssh has started. This makes long-running SSH sessions more secure.
-  (sleep 10 2>/dev/null && rmtmp) &
+  (exec 2>/dev/null >&2 </dev/null; sleep 10 && rmtmp) &
   SLEEP_PID="$!"
 fi
 
