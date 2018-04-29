@@ -9,7 +9,6 @@
 #
 # TODO(pts): Allow --setup to be specified in $TARGET.
 # TODO(pts): Add uk to each iteration of key derivation.
-# TODO(pts): Add ($TARGET) to user key prompt and host key prompt.
 # TODO(pts): Add random user key generation (gpg --armor --gen-random 1 32).
 #
 
@@ -66,11 +65,16 @@ if test "$SESAMESSH_UK"; then
   UK="$SESAMESSH_UK"
   unset SESAMESSH_UK  # Prevent exporting.
 else
-  # We could use `read -s' here, but Dash doesn't support it.
-  echo -n 'Enter sesamessh user key: ' >&2
+  if test $# != 0; then
+    echo -n "Enter sesamessh user key for target $*: " >&2
+  else
+    echo -n 'Enter sesamessh user key: ' >&2
+  fi
   # Any byte except for \0 and \n is supported in $UK. Accented characters
   # (non-ASCII bytes) are passed as is, but they are not recommended in case
   # the encoding of the TTY changes in the future.
+  #
+  # We could use `read -s' here, but Dash doesn't support it.
   read UK </dev/tty
 fi
 test "$UK" || die 'user key must not be empty'
@@ -80,7 +84,11 @@ if test "$SESAMESSH_HK"; then
   HK="$SESAMESSH_HK"
   unset SESAMESSH_HK  # Prevent exporting.
 else
-  echo -n 'Enter sesamessh host key: ' >&2
+  if test $# != 0; then
+    echo -n "Enter sesamessh host key for target $*: " >&2
+  else
+    echo -n 'Enter sesamessh host key: ' >&2
+  fi
   read HK </dev/tty
 fi
 test "$HK" = . && HK=

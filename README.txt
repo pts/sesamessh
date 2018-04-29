@@ -62,8 +62,8 @@ How to set up SesameSSH:
 
 3. The `sesamessh --setup' output will look like this:
 
-     Enter sesamessh user key: PASSPHRASE  (echoed, don't show anyone)
-     Enter sesamessh host key:
+     Enter sesamessh user key for target -p PORT USER@HOST: PASSPHRASE  (echoed, don't show anyone)
+     Enter sesamessh host key for target -p PORT USER@HOST:
      Warning: Permanently added 'h' (ED25519) to the list of known hosts.
      USER@HOST: Permission denied (publickey).
      info: sesamessh target: -p PORT USER@HOST
@@ -101,8 +101,8 @@ How to set up SesameSSH:
 
    The output should look like this:
 
-     Enter sesamessh user key: PASSPHRASE  (echoed, don't show anyone)
-     Enter sesamessh host key: HOSTKEY
+     Enter sesamessh user key for target USER@HOST: PASSPHRASE  (echoed, don't show anyone)
+     Enter sesamessh host key for target USER@HOST: HOSTKEY
      $ _
      $ exit
 
