@@ -1,0 +1,13 @@
+$ sudo apt-get install qrencode zbar-tools
+$ echo -n 'uOZVUQiC2Ev4bvnVCQonMDlz8XVOCI/CDwcWv1d0YwgD37yUv9eCbeKNpAiSuNxxiC+KMOBzcPdp v9nOc01dRw9J0xgN9XBQgC3tcK49pDhz1lI6kfx66fg4X7+gfLgJroHi/EuWPlPGqjDm8AckPCgG -p 54321 myuser@myhost.mydomain.org
+MyVeryStrongPassw0rd1
+MyEvenStrongerPassw0rd2' | qrencode -o qrs.png
+$ zbarimg -q --raw qrs.png
+uOZVUQiC2Ev4bvnVCQonMDlz8XVOCI/CDwcWv1d0YwgD37yUv9eCbeKNpAiSuNxxiC+KMOBzcPdp v9nOc01dRw9J0xgN9XBQgC3tcK49pDhz1lI6kfx66fg4X7+gfLgJroHi/EuWPlPGqjDm8AckPCgG -p 54321 myuser@myhost.mydomain.org
+MyVeryStrongPassw0rd1
+MyEvenStrongerPassw0rd2
+$ echo $?
+0
+# zbarcam instead of zbarimg would decode from webcam.
+
+__END__
