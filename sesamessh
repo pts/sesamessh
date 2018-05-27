@@ -3,8 +3,8 @@
 # This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 #
 # $ curl -s https://pts.github.io/sesamessh | sh
-# $ curl -Ls https://github.com/pts/sesamessh/raw/master/sesamessh | sh
-# $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+# $ curl -Ls  https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+# $ wget -qO- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
 # $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 #
 

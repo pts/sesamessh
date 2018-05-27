@@ -41,7 +41,7 @@ How to set up SesameSSH:
 1. On the client machine, download the sesamessh script and make it
    executable (type commands without the leading $):
 
-     $ curl -s https://github.com/pts/sesamessh/blob/master/sesamessh >sesamessh
+     $ curl -LO https://github.com/pts/sesamessh/raw/master/sesamessh
      $ chmod 755 sesamessh
 
 2. On the client machine, try to connect to the server:
@@ -111,8 +111,8 @@ How to set up SesameSSH:
 Alternative usage of SesameSSH without downloading it: Do any of:
 
   $ curl -s https://pts.github.io/sesamessh | sh
-  $ curl -Ls https://github.com/pts/sesamessh/raw/master/sesamessh | sh
-  $ wget -q -O- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+  $ curl -Ls  https://github.com/pts/sesamessh/raw/master/sesamessh | sh
+  $ wget -qO- https://github.com/pts/sesamessh/raw/master/sesamessh | sh
   $ busybox wget -qO- http://pts.github.io/sesamessh | busybox sh
 
 Shell compatibility:
@@ -131,7 +131,7 @@ Python compatibility:
 * 2.7: OK.
 * 2.6: OK.
 * 2.5: OK.
-* 2.4: Only if hashlib is installed as an extra package.
+* 2.4: Only if hashlib is installed as an extra package (from PyPi).
 * 3.x: Not compatible.
 
 __END__
