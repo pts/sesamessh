@@ -21,10 +21,15 @@ die() {
 # Needed in $SHCK_ARGS below.
 test "$ZSH_VERSION" && setopt shwordsplit 2>/dev/null
 
-unset TARGET UK HK IS_SETUP STATUS EXPECTED_OUTPUT PYCODE ARG SHKC_ARGS Q_ARGS  # Unexport.
+unset TARGET UK HK IS_SETUP IS_RANDOM_UK IS_RANDOM STATUS EXPECTED_OUTPUT PYCODE ARG SHKC_ARGS Q_ARGS  # Unexport.
 IS_SETUP=
+IS_RANDOM_UK=
 if test "$1" = setup || test "$1" = --setup; then
   IS_SETUP=1
+  shift
+elif test "$1" = setup-random || test "$1" = --setup-random; then
+  IS_SETUP=1
+  IS_RANDOM_UK=1
   shift
 fi
 
@@ -67,6 +72,11 @@ if test "$SESAMESSH_UK"; then
   # Do this instead: `read SESAMESSH_UK; export SESAMESSH_UK'.
   UK="$SESAMESSH_UK"
   unset SESAMESSH_UK  # Prevent exporting.
+elif test "$IS_RANDOM_UK"; then
+  PYCODE='import base64, os; print base64.b64encode(os.urandom(32))'
+  UK="$("$PYTHON" -c "$PYCODE")"
+  test "$?" = 0 || die 'random user key generation failed'
+  test "${UK%=}" = "$UK" && die "invalid random user key: $UK"
 else
   if test $# != 0; then
     echo -n "Enter sesamessh user key for target $*: " >&2

@@ -52,6 +52,10 @@ How to set up SesameSSH:
 
      $ ./sesamessh --setup -p PORT USER@HOST
 
+   Alternatively, if you want to use a new, random-generated user key:
+
+     $ ./sesamessh --setup-random USER@HOST
+
    When prompted for the sesamessh user key, invent a passphrase (or use a
    random 64 hex string), and press <Enter>. You will need to remember your
    user key, so take notes (into a file, or print it), and keep your notes a
