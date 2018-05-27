@@ -181,17 +181,27 @@ def main_pre(uk):
 
   hk = os.getenv("HK", "").strip()
   if hk:
-    host_key = ""
-    if not host_key and hk.startswith("ssh-ed25519"):
+    host_key_line = host_key = ""
+    if not host_key and hk.startswith("ssh-ed25519 "):
       hks = hk.split()
-      assert len(hks) == 3, "Bad host key format: %r" % hk
-      assert hks[0] == "h" and hks[1] == "ssh-ed25519", "Bad host key fields: %r" % hk
+      assert len(hks) in (2, 3), "Bad host key format: %r" % hk
+      assert hks[1] == "ssh-ed25519", "Bad host key fields: %r" % hk
       try:
-        host_key_data = base64.b64decode(hks[2])
+        host_key_data = base64.b64decode(hks[1])
       except (TypeError, ValueError):
         assert 0, "Bad host key syntax: %r" % hk
       assert len(host_key_data) == 51 and host_key_data.startswith("\0\0\0\x0bssh-ed25519\0\0\0 "), "Bad host key encoded format: %r" % hk
       host_key = host_key_data[19:]
+    if not host_key and hk.startswith("ssh-rsa "):
+      hks = hk.split()
+      assert len(hks) in (2, 3), "Bad host key format: %r" % hk
+      assert hks[0] == "ssh-rsa", "Bad host key fields: %r" % hk
+      try:
+        host_key_data = base64.b64decode(hks[1])
+      except (TypeError, ValueError):
+        assert 0, "Bad host key syntax: %r" % hk
+      assert host_key_data.startswith("\0\0\0\7ssh-rsa\0\0"), "Bad host key encoded format: %r" % hk
+      host_key_line = host_key = "ssh-rsa %s" % hks[1]
     if not host_key and len(hk) == 64:
       try:
         host_key = hk.decode("hex")
@@ -206,8 +216,10 @@ def main_pre(uk):
           host_key = ""
       except (TypeError, ValueError):
         host_key = ""
-    assert len(host_key) == 32, "Bad host key: %r" % hk
-    open(tdir + "/known_hosts", "ab").write("h %s\n" % build_openssh_public_key_ed25519(host_key, comment="").rstrip())
+    if not host_key_line:
+      assert len(host_key) == 32, "Bad host key: %r" % hk
+      host_key_line = build_openssh_public_key_ed25519(host_key, comment="").rstrip()
+    open(tdir + "/known_hosts", "ab").write("h %s\n" % host_key_line.rstrip())
 
   assert uk, "Empty user key."
   private_key = ""
@@ -258,21 +270,33 @@ def main_post_setup():
   hk = os.getenv("HK", "").strip()
   hks = hk.split()
   assert len(hks) == 3, "Bad host key format: %r" % hk
-  assert hks[0] == "h" and hks[1] == "ssh-ed25519", "Bad host key fields: %r" % hk
-  try:
-    host_key_data = base64.b64decode(hks[2])
-  except (TypeError, ValueError):
-    assert 0, "Bad host key syntax: %r" % hk
-  assert len(host_key_data) == 51 and host_key_data.startswith("\0\0\0\x0bssh-ed25519\0\0\0 "), "Bad host key encoded format: %r" % hk
-  host_key = host_key_data[19:]
+  assert hks[0] == "h", "Bad hostname in host key: %r" % hk
   tdir = os.getenv("T", "")
-  assert tdir, "Empty tmp dirname."
-  open(tdir + "/id_sesamessh.setup", "wb").write("".join((
-      "info: sesamessh host key b64: %s\n" % base64.b64encode(host_key),
-      "info: sesamessh host key hex: %s\n" % host_key.encode("hex"),
-      "info: sesamessh host public key: %s\n" % build_openssh_public_key_ed25519(host_key, comment="").rstrip(),
-      )))'
-
+  if hks[1] == "ssh-ed25519":
+    try:
+      host_key_data = base64.b64decode(hks[2])
+    except (TypeError, ValueError):
+      assert 0, "Bad host key syntax: %r" % hk
+    assert len(host_key_data) == 51 and host_key_data.startswith("\0\0\0\x0bssh-ed25519\0\0\0 "), "Bad host key encoded format: %r" % hk
+    host_key = host_key_data[19:]
+    assert tdir, "Empty tmp dirname."
+    open(tdir + "/id_sesamessh.setup", "wb").write("".join((
+        "info: sesamessh host key b64: %s\n" % base64.b64encode(host_key),
+        "info: sesamessh host key hex: %s\n" % host_key.encode("hex"),
+        "info: sesamessh host public key: %s\n" % build_openssh_public_key_ed25519(host_key, comment="").rstrip(),
+        )))
+  elif hks[1] == "ssh-rsa":
+    try:
+      host_key_data = base64.b64decode(hks[2])
+    except (TypeError, ValueError):
+      assert 0, "Bad host key syntax: %r" % hk
+    assert host_key_data.startswith("\0\0\0\7ssh-rsa\0\0"), "Bad host key encoded format: %r" % hk
+    open(tdir + "/id_sesamessh.setup", "wb").write("".join((
+        "info: sesamessh host key: ssh-rsa %s\n" % hks[2],
+        )))
+  else:
+    assert 0, "Bad host key fields: %r" % hk
+'
 
 export HK T IS_SETUP
 
@@ -330,7 +354,7 @@ ssh -F/dev/null \
     -o UserKnownHostsFile="$T/known_hosts" \
     -o GlobalKnownHostsFile=/dev/null \
     -o HostKeyAlias=h \
-    -o HostKeyAlgorithms=ssh-ed25519 \
+    -o HostKeyAlgorithms=ssh-ed25519,ssh-rsa \
     -o KexAlgorithms=curve25519-sha256@libssh.org \
     -o IdentitiesOnly=yes \
     -o BatchMode=yes \
