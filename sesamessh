@@ -57,7 +57,7 @@ if test $# = 0; then
     IS_SETUP=1
     TARGET="${TARGET#*setup }"
   fi
-  
+
   # Dash and busybox sh don't support this:
   # test -z "$BASH_SOURCE" && test -z "$ZSH_SCRIPT"
   # This is for interactive SSH in `curl ... | sh'
